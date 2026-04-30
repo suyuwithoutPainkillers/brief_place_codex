@@ -1,0 +1,67 @@
+{
+  "name": "CodeFile",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "\u6587\u4ef6\u540d"
+    },
+    "language": {
+      "type": "string",
+      "enum": [
+        "python",
+        "javascript",
+        "typescript",
+        "c",
+        "cpp",
+        "java",
+        "go",
+        "rust",
+        "html",
+        "css",
+        "markdown",
+        "json",
+        "yaml",
+        "shell",
+        "other"
+      ],
+      "description": "\u7f16\u7a0b\u8bed\u8a00"
+    },
+    "content": {
+      "type": "string",
+      "description": "\u6587\u4ef6\u5185\u5bb9\uff08\u6587\u672c\uff09"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "\u4e0a\u4f20\u6587\u4ef6\u7684URL"
+    },
+    "file_size": {
+      "type": "number",
+      "description": "\u6587\u4ef6\u5927\u5c0f\uff08bytes\uff09"
+    },
+    "folder": {
+      "type": "string",
+      "description": "\u6240\u5c5e\u6587\u4ef6\u5939",
+      "default": "root"
+    },
+    "description": {
+      "type": "string",
+      "description": "\u6587\u4ef6\u63cf\u8ff0/\u5907\u6ce8"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "\u6807\u7b7e"
+    },
+    "is_starred": {
+      "type": "boolean",
+      "default": false,
+      "description": "\u662f\u5426\u6536\u85cf"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
