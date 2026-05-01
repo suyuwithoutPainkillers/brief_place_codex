@@ -22,15 +22,25 @@ export default function CodeViewer() {
   });
 
   useEffect(() => {
-    if (!file?.blob) {
+    let active = true;
+
+    if (!file?.storage_path) {
       setDownloadUrl('');
       return undefined;
     }
 
-    const url = codeFileStore.createDownloadUrl(file);
-    setDownloadUrl(url);
+    codeFileStore.createDownloadUrl(file)
+      .then((url) => {
+        if (active) setDownloadUrl(url);
+      })
+      .catch((error) => {
+        console.error('Signed download URL failed:', error);
+        if (active) setDownloadUrl('');
+      });
 
-    return () => URL.revokeObjectURL(url);
+    return () => {
+      active = false;
+    };
   }, [file]);
 
   const handleCopy = () => {
