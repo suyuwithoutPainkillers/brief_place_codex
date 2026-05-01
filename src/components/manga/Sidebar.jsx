@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Code2, FolderOpen, Settings, Sun, Moon, User, Zap } from 'lucide-react';
+import { BookOpen, Code2, FolderOpen, LogOut, Settings, Sun, Moon, User, Zap } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 
 const navItems = [
@@ -11,12 +13,19 @@ const navItems = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const { signOut, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   const isActive = (path) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
   const isSettings = location.pathname === '/settings';
+
+  const handleSignOut = async () => {
+    queryClient.clear();
+    await signOut();
+  };
 
   return (
     <aside className="w-16 md:w-52 flex-shrink-0 bg-card border-r-[3px] border-ink flex flex-col min-h-screen sticky top-0 h-screen z-40">
@@ -53,6 +62,11 @@ export default function Sidebar() {
 
       {/* Settings at bottom */}
       <div className="p-2 pb-4 border-t-[3px] border-ink">
+        <div className="hidden md:block px-3 py-2 mb-1 border border-ink/20 bg-secondary/60">
+          <div className="font-manga text-[10px] tracking-widest text-muted-foreground">SIGNED IN</div>
+          <div className="font-jp text-[10px] text-ink truncate">{user?.email}</div>
+        </div>
+
         <Link
           to="/settings"
           className={`flex items-center gap-3 px-3 py-2.5 font-manga text-sm tracking-wider transition-all ${
@@ -76,6 +90,14 @@ export default function Sidebar() {
             <Moon className="w-4 h-4 flex-shrink-0" />
           )}
           <span className="hidden md:inline">{theme === 'dark' ? 'LIGHT' : 'DARK'}</span>
+        </button>
+
+        <button
+          onClick={handleSignOut}
+          className="mt-1 w-full flex items-center gap-3 px-3 py-2.5 font-manga text-sm tracking-wider text-ink hover:bg-secondary transition-all"
+        >
+          <LogOut className="w-4 h-4 flex-shrink-0" />
+          <span className="hidden md:inline">LOG OUT</span>
         </button>
       </div>
     </aside>
