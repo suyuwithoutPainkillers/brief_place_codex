@@ -1,6 +1,6 @@
-const DB_NAME = 'brief-place-code-library';
-const DB_VERSION = 1;
-const STORE_NAME = 'codefiles';
+import { requireSupabase } from '@/api/supabaseClient';
+
+const BUCKET_NAME = 'code-files';
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -9,117 +9,170 @@ const createId = () => {
   return `file_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 };
 
-const openDb = () => new Promise((resolve, reject) => {
-  const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-  request.onupgradeneeded = () => {
-    const db = request.result;
-    if (!db.objectStoreNames.contains(STORE_NAME)) {
-      const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      store.createIndex('created_date', 'created_date');
-      store.createIndex('updated_date', 'updated_date');
-      store.createIndex('language', 'language');
-      store.createIndex('is_starred', 'is_starred');
-    }
-  };
-
-  request.onsuccess = () => resolve(request.result);
-  request.onerror = () => reject(request.error);
-});
-
-const runStoreRequest = async (mode, action) => {
-  const db = await openDb();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, mode);
-    const store = transaction.objectStore(STORE_NAME);
-    const request = action(store);
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-    transaction.oncomplete = () => db.close();
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error);
-    };
-  });
-};
-
-const compareValues = (a, b) => {
-  if (a === b) return 0;
-  if (a == null) return -1;
-  if (b == null) return 1;
-  return a > b ? 1 : -1;
-};
-
-const sortRecords = (records, sortBy = '-updated_date') => {
-  const descending = sortBy.startsWith('-');
-  const field = descending ? sortBy.slice(1) : sortBy;
-
-  return [...records].sort((a, b) => {
-    const result = compareValues(a[field], b[field]);
-    return descending ? -result : result;
-  });
-};
-
-const matchesQuery = (record, query) => (
-  Object.entries(query).every(([key, value]) => record[key] === value)
+const sanitizeFileName = (name) => (
+  name
+    .replace(/[\\/:*?"<>|#%{}^[\]`]/g, '-')
+    .replace(/\s+/g, '_')
+    .slice(0, 160) || 'code-file'
 );
+
+const parseSort = (sortBy = '-updated_date') => {
+  const descending = sortBy.startsWith('-');
+  return {
+    ascending: !descending,
+    field: descending ? sortBy.slice(1) : sortBy,
+  };
+};
+
+const getCurrentUser = async (client) => {
+  const { data, error } = await client.auth.getUser();
+  if (error) throw error;
+  if (!data.user) {
+    throw new Error('You must be signed in to use cloud storage.');
+  }
+  return data.user;
+};
+
+const cleanPatch = (patch) => {
+  const blocked = new Set(['blob', 'file_url', 'created_date', 'id', 'storage_path', 'user_id']);
+  return Object.fromEntries(
+    Object.entries(patch).filter(([key]) => !blocked.has(key))
+  );
+};
+
+const runQuery = async (query) => {
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
+};
 
 export const codeFileStore = {
   async list(sortBy = '-updated_date', limit = 200) {
-    const records = await runStoreRequest('readonly', (store) => store.getAll());
-    return sortRecords(records, sortBy).slice(0, limit);
+    const client = requireSupabase();
+    const { field, ascending } = parseSort(sortBy);
+
+    return runQuery(
+      client
+        .from('code_files')
+        .select('*')
+        .order(field, { ascending })
+        .limit(limit)
+    );
   },
 
   async filter(query = {}, sortBy = '-updated_date', limit = 200) {
-    const records = await runStoreRequest('readonly', (store) => store.getAll());
-    return sortRecords(records.filter((record) => matchesQuery(record, query)), sortBy).slice(0, limit);
+    const client = requireSupabase();
+    const { field, ascending } = parseSort(sortBy);
+
+    let request = client
+      .from('code_files')
+      .select('*')
+      .order(field, { ascending })
+      .limit(limit);
+
+    Object.entries(query).forEach(([key, value]) => {
+      request = request.eq(key, value);
+    });
+
+    return runQuery(request);
   },
 
   async get(id) {
-    return runStoreRequest('readonly', (store) => store.get(id));
+    const client = requireSupabase();
+    return runQuery(
+      client
+        .from('code_files')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle()
+    );
   },
 
   async create(payload) {
-    const now = new Date().toISOString();
+    const client = requireSupabase();
+    const user = await getCurrentUser(client);
+    const id = createId();
+    const storagePath = payload.blob
+      ? `${user.id}/${id}/${sanitizeFileName(payload.name)}`
+      : null;
+
+    if (payload.blob) {
+      const { error: uploadError } = await client.storage
+        .from(BUCKET_NAME)
+        .upload(storagePath, payload.blob, {
+          contentType: payload.file_type || payload.blob.type || 'application/octet-stream',
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+    }
+
     const record = {
-      id: createId(),
-      folder: 'root',
-      description: '',
-      tags: [],
-      is_starred: false,
-      created_date: now,
-      updated_date: now,
-      ...payload,
+      id,
+      user_id: user.id,
+      name: payload.name,
+      language: payload.language || 'other',
+      content: payload.content || '',
+      storage_path: storagePath,
+      file_size: payload.file_size || 0,
+      file_type: payload.file_type || payload.blob?.type || '',
+      folder: payload.folder || 'root',
+      description: payload.description || '',
+      tags: payload.tags || [],
+      is_starred: Boolean(payload.is_starred),
     };
 
-    await runStoreRequest('readwrite', (store) => store.add(record));
-    return record;
+    return runQuery(
+      client
+        .from('code_files')
+        .insert(record)
+        .select('*')
+        .single()
+    );
   },
 
   async update(id, patch) {
-    const existing = await this.get(id);
-    if (!existing) {
-      throw new Error(`Code file not found: ${id}`);
-    }
+    const client = requireSupabase();
 
-    const updated = {
-      ...existing,
-      ...patch,
-      updated_date: new Date().toISOString(),
-    };
-
-    await runStoreRequest('readwrite', (store) => store.put(updated));
-    return updated;
+    return runQuery(
+      client
+        .from('code_files')
+        .update(cleanPatch(patch))
+        .eq('id', id)
+        .select('*')
+        .single()
+    );
   },
 
   async delete(id) {
-    await runStoreRequest('readwrite', (store) => store.delete(id));
+    const client = requireSupabase();
+    const file = await this.get(id);
+
+    if (file?.storage_path) {
+      const { error: storageError } = await client.storage
+        .from(BUCKET_NAME)
+        .remove([file.storage_path]);
+
+      if (storageError) throw storageError;
+    }
+
+    const { error } = await client
+      .from('code_files')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
   },
 
-  createDownloadUrl(file) {
-    if (!file?.blob) return null;
-    return URL.createObjectURL(file.blob);
+  async createDownloadUrl(file) {
+    if (!file?.storage_path) return '';
+
+    const client = requireSupabase();
+    const { data, error } = await client.storage
+      .from(BUCKET_NAME)
+      .createSignedUrl(file.storage_path, 60 * 60);
+
+    if (error) throw error;
+    return data.signedUrl;
   },
 };
