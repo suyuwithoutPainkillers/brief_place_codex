@@ -30,7 +30,7 @@ export default function FileManager() {
   });
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this scroll from local storage?')) return;
+    if (!window.confirm('Delete this scroll from your cloud archive?')) return;
 
     setDeletingId(id);
     try {
