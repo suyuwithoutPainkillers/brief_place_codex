@@ -62,7 +62,7 @@ export default function UploadZone({ onUploadComplete }) {
       onUploadComplete?.();
     } catch (err) {
       console.error('File save failed:', err);
-      setError('Could not save that file locally. Try a smaller text/code file.');
+      setError(err.message || 'Could not save that file to your cloud archive.');
     } finally {
       setUploadStatus('');
       setUploading(false);
@@ -126,7 +126,7 @@ export default function UploadZone({ onUploadComplete }) {
               </div>
               <div className="flex items-center gap-2 font-manga text-xs tracking-wider opacity-40">
                 <Upload className="w-3 h-3" />
-                <span>SAVED LOCALLY IN YOUR BROWSER</span>
+                <span>SYNCED TO YOUR CLOUD ARCHIVE</span>
               </div>
               {error && (
                 <p className="max-w-sm text-center font-jp text-xs text-destructive">
